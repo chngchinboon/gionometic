@@ -77,7 +77,7 @@ align = rs.align(align_to)
 # webcame setup
 # cap = cv2.VideoCapture(0)
 # hasFrame, frame = cap.read()
-
+fframe = 1
 try:
     # Starting OpenPose
     opWrapper = op.WrapperPython()
@@ -85,6 +85,7 @@ try:
     opWrapper.start()
 
     while 1:
+        ts=time.perf_counter()
         # Read image and face rectangle locations
         # imageToProcess = cv2.imread(args[0].image_path)
         # hasFrame, imageToProcess = cap.read()
@@ -107,47 +108,55 @@ try:
         depth_image = np.asanyarray(aligned_depth_frame.get_data())
         color_image = np.asanyarray(color_frame.get_data())
 
-        depth_intrin = aligned_depth_frame.profile.as_video_stream_profile().intrinsics
-        color_intrin = color_frame.profile.as_video_stream_profile().intrinsics
-        depth_to_color_extrin = aligned_depth_frame.profile.get_extrinsics_to(color_frame.profile)
+        if fframe ==1 :
+            first_frame = color_image.copy()
+            fframe =0
 
+        # depth_intrin = aligned_depth_frame.profile.as_video_stream_profile().intrinsics
+        # color_intrin = color_frame.profile.as_video_stream_profile().intrinsics
+        # print(f'width: {color_intrin.width} height: {color_intrin.height}')
+        # depth_to_color_extrin = aligned_depth_frame.profile.get_extrinsics_to(color_frame.profile)
+
+        # default image from RS: w848 h480. seems like max resolu input for openpose: 300x300
         r1x=300
         r1y=100
-        r2w=300
-        r2h=300
+        r2w=300 #300
+        r2h=300 #300
 
         handRectangles = [
             # Left/Right hands person 0
             [
-            op.Rectangle(0., 0., 0., 0.),
+            op.Rectangle(0., 0., 0., 0.), #disable left hand
             op.Rectangle(r1x, r1y, r2w, r2h),
             ],
-            # Left/Right hands person 1
-            # [
-            # op.Rectangle(80.155792, 407.673492, 80.812706, 80.812706),
-            # op.Rectangle(46.449715, 404.559753, 98.898178, 98.898178),
-            # ],
-            # # Left/Right hands person 2
-            # [
-            # op.Rectangle(185.692673, 303.112244, 157.587555, 157.587555),
-            # op.Rectangle(88.984360, 268.866547, 117.818230, 117.818230),
-            # ]
+
         ]
 
         # Create new datum
         datum = op.Datum()
         datum.cvInputData = color_image
-        datum.handRectangles = handRectangles
+        datum.handRectangles = handRectangles # need to modify here with a hand locator.
 
         # Process and display image
         opWrapper.emplaceAndPop([datum])
-        print("Left hand keypoints: \n" + str(datum.handKeypoints[0]))
-        print("Right hand keypoints: \n" + str(datum.handKeypoints[1]))
+        # print("Left hand keypoints: \n" + str(datum.handKeypoints[0]))
+        # print("Right hand keypoints: \n" + str(datum.handKeypoints[1]))
         frame = datum.cvOutputData
+        kpdata = datum.handKeypoints[1][0]
 
         cv2.rectangle(frame, (r1x, r1y), (r1x+r2w, r1y+r2h), (0, 255, 0), 1, 1)
 
+        for idx,kp in enumerate(kpdata):
+            if kp[2]<0.05: #skip showing points with low confidence
+                continue
+            # print(f'p{idx}: {kp}')
+            cv2.circle(frame, (int(kp[0]), int(kp[1])), 6, (0, 255, 255), thickness=-1, lineType=cv2.FILLED)
+            cv2.putText(frame, "{}".format(idx), (int(kp[0]), int(kp[1])), cv2.FONT_HERSHEY_SIMPLEX, .8,
+                        (0, 0, 255), 2, lineType=cv2.LINE_AA)
+
         cv2.imshow("OpenPose 1.5.1 - Tutorial Python API", frame)
+        te=time.perf_counter()-ts
+        print(f'Time elasped: {te:.2f}, FPS: {1/te:.2f}')
         key = cv2.waitKey(1)
         if key == 27:
             break
