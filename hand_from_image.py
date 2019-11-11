@@ -154,9 +154,13 @@ try:
             cv2.putText(frame, "{}".format(idx), (int(kp[0]), int(kp[1])), cv2.FONT_HERSHEY_SIMPLEX, .8,
                         (0, 0, 255), 2, lineType=cv2.LINE_AA)
 
+        te = time.perf_counter() - ts
+        fps=1/te
+        cv2.putText(frame, f"{fps:.2f} FPS", (0, 20), cv2.FONT_HERSHEY_SIMPLEX, .8,
+                    (0, 0, 255), 2, lineType=cv2.LINE_AA)
         cv2.imshow("OpenPose 1.5.1 - Tutorial Python API", frame)
-        te=time.perf_counter()-ts
-        print(f'Time elasped: {te:.2f}, FPS: {1/te:.2f}')
+
+        # print(f'Time elasped: {te:.2f}, FPS: {fps:.2f}')
         key = cv2.waitKey(1)
         if key == 27:
             break
