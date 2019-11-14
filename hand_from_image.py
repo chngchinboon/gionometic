@@ -86,22 +86,33 @@ keypoint_pairs = ((0, 1, 2),
                   (18, 19, 20)
                   )
 
-def process_kp_angles(kpdata):
+
+def xyd_to_xyz(pt, aligned_depth_frame, rs, depth_intrin):
+    d_px = [pt[0], pt[1]]
+    d_value = aligned_depth_frame.get_distance(*d_px)
+    d_pt = np.array(rs.rs2_deproject_pixel_to_point(depth_intrin, d_px, d_value))
+    return d_pt
+
+
+def process_kp_angles(kpdata, aligned_depth_frame, rs, depth_intrin):
+    print('#################################')
     for pair in keypoint_pairs:
-        #check confidence of point, if poor, skip
-        pt0 = kpdata[pair[0]]
-        pt1 = kpdata[pair[1]]
-        pt2 = kpdata[pair[2]]
-        if (pt0[2] < 0.05) | (pt1[2] < 0.05)| (pt2[2] < 0.05):  # skip showing points with low confidence
+        if (kpdata[pair[0]][2] < 0.05) | (kpdata[pair[1]][2] < 0.05) | (
+                kpdata[pair[2]][2] < 0.05):  # skip showing points with low confidence
             print(f'angle for {pair}: Bad')
             continue
+        # check confidence of point, if poor, skip
+        pt0 = xyd_to_xyz(kpdata[pair[0]], aligned_depth_frame, rs, depth_intrin)
+        pt1 = xyd_to_xyz(kpdata[pair[1]], aligned_depth_frame, rs, depth_intrin)
+        pt2 = xyd_to_xyz(kpdata[pair[2]], aligned_depth_frame, rs, depth_intrin)
 
-        start_vector = pt1-pt0
+        start_vector = pt1 - pt0
         norm_start_vector = np.linalg.norm(start_vector)
-        end_vector = pt2-pt1
+        end_vector = pt2 - pt1
         norm_end_vector = np.linalg.norm(end_vector)
-        angle = np.dot(start_vector, end_vector)/(norm_start_vector*norm_end_vector)
+        angle = np.dot(start_vector, end_vector) / (norm_start_vector * norm_end_vector)
         print(f'angle for {pair}: {np.rad2deg(angle):.2f}')
+
 
 # Add others in path?
 for i in range(0, len(args[1])):
@@ -175,7 +186,7 @@ try:
             first_frame = color_image.copy()
             fframe = 0
 
-        # depth_intrin = aligned_depth_frame.profile.as_video_stream_profile().intrinsics
+        depth_intrin = aligned_depth_frame.profile.as_video_stream_profile().intrinsics
         # color_intrin = color_frame.profile.as_video_stream_profile().intrinsics
         # print(f'width: {color_intrin.width} height: {color_intrin.height}')
         # depth_to_color_extrin = aligned_depth_frame.profile.get_extrinsics_to(color_frame.profile)
@@ -208,7 +219,7 @@ try:
         kpdata = datum.handKeypoints[1][0]
 
         cv2.rectangle(frame, (r1x, r1y), (r1x + r2w, r1y + r2h), (0, 255, 0), 1, 1)
-        process_kp_angles(kpdata)
+        process_kp_angles(kpdata, aligned_depth_frame, rs, depth_intrin)
         for idx, kp in enumerate(kpdata):
             if kp[2] < 0.05:  # skip showing points with low confidence
                 continue
@@ -230,4 +241,4 @@ try:
         # cv2.waitKey(0)
 except Exception as e:
     print(e)
-    sys.exit(-1)
+    # sys.exit(-1)
