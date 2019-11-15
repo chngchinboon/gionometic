@@ -69,21 +69,21 @@ keypoint_segments = ((0, 1, 'thumb base'),  # 0
                      (19, 20, 'baby distal phalanx'),  # 19
                      )
 
-keypoint_pairs = ((0, 1, 2),
-                  (1, 2, 3),
-                  (2, 3, 4),
-                  (0, 5, 6),
-                  (5, 6, 7),
-                  (6, 7, 8),
-                  (0, 9, 10),
-                  (9, 10, 11),
-                  (10, 11, 12),
-                  (0, 13, 14),
-                  (13, 14, 15),
-                  (14, 15, 16),
-                  (0, 17, 18),
-                  (17, 18, 19),
-                  (18, 19, 20)
+keypoint_pairs = ((0, 1, 2, '0_1_2','thumb CMC'),
+                  (1, 2, 3, '1_2_3','thumb MCP'),
+                  (2, 3, 4, '2_3_4', 'thumb IP'),
+                  (0, 5, 6, '0_5_6', 'index PIP'),
+                  (5, 6, 7, '5_6_7', 'index MCP'),
+                  (6, 7, 8, '6_7_8', 'index DIP'),
+                  (0, 9, 10, '0_9_10', 'middle PIP'),
+                  (9, 10, 11, ' 9_10_11', 'middle MCP'),
+                  (10, 11, 12, '10_11_12', 'middle DIP'),
+                  (0, 13, 14, '0_13_14', 'ring PIP'),
+                  (13, 14, 15, '13_14_15', 'ring MCP'),
+                  (14, 15, 16, '14_15_16', 'ring DIP'),
+                  (0, 17, 18, '0_17_18', 'baby PIP'),
+                  (17, 18, 19, '17_18_19', 'baby MCP'),
+                  (18, 19, 20, '18_19_20', 'baby DIP')
                   )
 
 
@@ -94,12 +94,14 @@ def xyd_to_xyz(pt, aligned_depth_frame, rs, depth_intrin):
     return d_pt
 
 
-def process_kp_angles(kpdata, aligned_depth_frame, rs, depth_intrin):
-    print('#################################')
+def process_kp_angles(kpdata, aligned_depth_frame, rs, depth_intrin, thresh):
+    kp_angle = {key[3]: 0 for key in keypoint_pairs}
+    # print('#################################')
     for pair in keypoint_pairs:
-        if (kpdata[pair[0]][2] < 0.05) | (kpdata[pair[1]][2] < 0.05) | (
-                kpdata[pair[2]][2] < 0.05):  # skip showing points with low confidence
-            print(f'angle for {pair}: Bad')
+        if (kpdata[pair[0]][2] < thresh) | (kpdata[pair[1]][2] < thresh) | (
+                kpdata[pair[2]][2] < thresh):  # skip showing points with low confidence
+            # print(f'angle for {pair[3]}: Bad')
+            kp_angle[pair[3]] = np.NaN
             continue
         # check confidence of point, if poor, skip
         pt0 = xyd_to_xyz(kpdata[pair[0]], aligned_depth_frame, rs, depth_intrin)
@@ -111,7 +113,17 @@ def process_kp_angles(kpdata, aligned_depth_frame, rs, depth_intrin):
         end_vector = pt2 - pt1
         norm_end_vector = np.linalg.norm(end_vector)
         angle = np.dot(start_vector, end_vector) / (norm_start_vector * norm_end_vector)
-        print(f'angle for {pair}: {np.rad2deg(angle):.2f}')
+        # print(f'angle for {pair[3]}: {np.rad2deg(angle):.2f}')
+        kp_angle[pair[3]] = angle
+    return kp_angle
+
+
+def store_maxmin(kp_maxmin, kp_angles):
+    new_maxmin = kp_maxmin.copy()
+    for key, angle in kp_angles.items():
+        new_maxmin[key] = np.array((np.nanmax((kp_maxmin[key][0], angle)),
+                                    np.nanmin((kp_maxmin[key][1], angle))))
+    return new_maxmin
 
 
 # Add others in path?
@@ -152,6 +164,9 @@ align = rs.align(align_to)
 # cap = cv2.VideoCapture(0)
 # hasFrame, frame = cap.read()
 fframe = 1
+kp_maxmin = {key[3]: np.array((0, 0)) for key in keypoint_pairs}
+confidence_threshold = 0.1
+
 try:
     # Starting OpenPose
     opWrapper = op.WrapperPython()
@@ -219,19 +234,36 @@ try:
         kpdata = datum.handKeypoints[1][0]
 
         cv2.rectangle(frame, (r1x, r1y), (r1x + r2w, r1y + r2h), (0, 255, 0), 1, 1)
-        process_kp_angles(kpdata, aligned_depth_frame, rs, depth_intrin)
+        kp_angles = process_kp_angles(kpdata, aligned_depth_frame, rs, depth_intrin, confidence_threshold)  # get angles between segments
+        # store max min
+        kp_maxmin = store_maxmin(kp_maxmin, kp_angles)
+        # print(kp_maxmin)
         for idx, kp in enumerate(kpdata):
-            if kp[2] < 0.05:  # skip showing points with low confidence
+            if kp[2] < confidence_threshold:  # skip showing points with low confidence
                 continue
             # print(f'p{idx}: {kp}')
-            cv2.circle(frame, (int(kp[0]), int(kp[1])), 6, (0, 255, 255), thickness=-1, lineType=cv2.FILLED)
+            cv2.circle(frame, (int(kp[0]), int(kp[1])), 3, (0, 255, 255), thickness=-1, lineType=cv2.FILLED)
             cv2.putText(frame, "{}".format(idx), (int(kp[0]), int(kp[1])), cv2.FONT_HERSHEY_SIMPLEX, .8,
                         (0, 0, 255), 2, lineType=cv2.LINE_AA)
 
+        table_start = (0, 0)
+        cell_height = 25
+        cell_width = 50
+        frame = cv2.resize(frame, (1280, 720))
+
+        i = 0
+        for k, v in kp_maxmin.items():  # table of values
+            i += 1
+            cv2.putText(frame, f"{k}: Max: {np.rad2deg(v[0]):3.2f}, Min: {np.rad2deg(v[1]):3.2f}, Avg: {np.rad2deg(v[0])-np.rad2deg(v[1])/2:3.2f}",
+                        (table_start[0], table_start[1] + cell_height * i),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, lineType=cv2.LINE_AA)
+
         te = time.perf_counter() - ts
         fps = 1 / te
-        cv2.putText(frame, f"{fps:.2f} FPS", (0, 20), cv2.FONT_HERSHEY_SIMPLEX, .8,
+
+        cv2.putText(frame, f"{fps:.2f} FPS", (0, frame.shape[0] - cell_height), cv2.FONT_HERSHEY_SIMPLEX, .8,
                     (0, 0, 255), 2, lineType=cv2.LINE_AA)
+
         cv2.imshow("OpenPose 1.5.1 - Tutorial Python API", frame)
 
         # print(f'Time elasped: {te:.2f}, FPS: {fps:.2f}')
@@ -242,3 +274,7 @@ try:
 except Exception as e:
     print(e)
     # sys.exit(-1)
+
+for k,v in kp_maxmin.items():
+    print(f'{[v[4] for v in keypoint_pairs if k in v][0]}: Max: {np.rad2deg(v[0]):3.2f}, Min: {np.rad2deg(v[1]):3.2f}, '
+          f'Avg: {np.rad2deg(v[0])-np.rad2deg(v[1])/2:3.2f}')
